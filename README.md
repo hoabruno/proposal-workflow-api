@@ -44,6 +44,26 @@ is the single source of truth. Business rules:
 Domain errors carry stable codes (`SELF_REVIEW`, `DATE_ALREADY_TAKEN`, ...)
 meant to be mapped to HTTP status codes and to user-facing messages.
 
+## HTTP API
+
+All routes live under `/api`; interactive documentation at `/api/docs`
+(OpenAPI JSON at `/api/docs-json`).
+
+| Method | Route                 | Description                                                         |
+| ------ | --------------------- | ------------------------------------------------------------------- |
+| POST   | `/api/proposals`      | Propose a word. Anonymous, limited to 3 per hour per visitor.       |
+| GET    | `/api/words/current`  | Word of the day, or `null` before the first publication.            |
+| GET    | `/api/words/stream`   | Server-Sent Events: `word` on connect and on every change, `ping` every 25 s. |
+| GET    | `/api/health`         | Liveness with a database round trip.                                |
+
+Errors always have the shape `{ "code": "...", "message": "..." }` (plus
+`reason` for `INVALID_WORD`): `422` invalid word, `409` duplicate or
+conflicting update, `403` forbidden transition, `429` rate limited, `400`
+malformed payload (`VALIDATION_FAILED`).
+
+The daily job runs at 00:00:30 in Geneva and once at boot, so a server that
+was down at midnight catches up as soon as it starts.
+
 ## Code map
 
 | Path                                  | Role                                                        |
@@ -51,7 +71,10 @@ meant to be mapped to HTTP status codes and to user-facing messages.
 | `api/prisma/schema.prisma`            | Data model: users, proposals, append-only proposal events   |
 | `api/src/proposals/domain/`           | Pure domain logic: workflow, word policy, Geneva calendar   |
 | `api/src/proposals/proposals.service.ts` | Transactions, optimistic locking, daily publication job  |
+| `api/src/words/`                      | Word of the day, live feed (SSE) and the scheduled job      |
+| `api/src/common/api-exception.filter.ts` | Domain error codes to HTTP statuses                      |
 | `api/test/proposals.e2e-spec.ts`      | Service tests against a real PostgreSQL                     |
+| `api/test/http.e2e-spec.ts`           | HTTP tests: validation, rate limit, SSE, OpenAPI            |
 
 ## Running locally
 
@@ -74,7 +97,7 @@ npm run start:dev                # http://localhost:3000/api/health
 
 ```bash
 npm test             # unit tests: workflow, word policy, Geneva calendar
-npm run test:e2e     # service tests against a throwaway Postgres (port 54330)
+npm run test:e2e     # service and HTTP tests against a throwaway Postgres (port 54330)
 npm run lint
 ```
 
@@ -85,8 +108,6 @@ job at once.
 
 ## Roadmap
 
-- Public HTTP endpoints: submit a word (rate limited), current word, live
-  updates over Server-Sent Events.
 - Authentication and reviewer/admin endpoints, OpenAPI documentation.
 - Vue 3 back-office for reviewers and admins.
 - Docker image, CI and deployment.
