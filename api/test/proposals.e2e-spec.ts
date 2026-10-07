@@ -292,6 +292,34 @@ describe('ProposalsService (real Postgres)', () => {
       ]);
     });
 
+    it('lets an archived word be proposed again, but not a rejected one', async () => {
+      const first = await scheduledWord('fondue', '2026-10-07');
+      await scheduledWord('raclette', '2026-10-08');
+      setDay('2026-10-07');
+      await service.publishDueWords();
+      // Still live today: proposing it again is a duplicate.
+      await expect(service.submit({ word: 'Fondue' })).rejects.toThrow(
+        DuplicateWordError,
+      );
+
+      setDay('2026-10-08');
+      await service.publishDueWords();
+      expect(
+        await prisma.proposal.findUniqueOrThrow({ where: { id: first.id } }),
+      ).toMatchObject({ status: ProposalStatus.ARCHIVED, activeWord: null });
+      const again = await service.submit({ word: 'Fondue' });
+      expect(again).toMatchObject({
+        status: ProposalStatus.SUBMITTED,
+        activeWord: 'fondue',
+      });
+
+      const { id } = await service.submit({ word: 'bof' });
+      await service.reject(id, reviewer, 0, 'Hors sujet');
+      await expect(service.submit({ word: 'bof' })).rejects.toThrow(
+        DuplicateWordError,
+      );
+    });
+
     it('catches up after missed runs and keeps only the latest word live', async () => {
       await scheduledWord('un', '2026-10-07');
       await scheduledWord('deux', '2026-10-08');

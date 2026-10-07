@@ -6,7 +6,13 @@ import {
 } from './errors.js';
 
 export type ProposalAction =
-  'approve' | 'reject' | 'schedule' | 'unschedule' | 'publish' | 'archive';
+  | 'approve'
+  | 'reject'
+  | 'schedule'
+  | 'unschedule'
+  | 'publish'
+  | 'publishNow'
+  | 'archive';
 
 /** Who performs an action: a signed-in user, or the daily publication job. */
 export type Actor =
@@ -45,6 +51,12 @@ export const TRANSITIONS: Readonly<Record<ProposalAction, Transition>> = {
     from: ProposalStatus.SCHEDULED,
     to: ProposalStatus.PUBLISHED,
     allowed: ['system'],
+  },
+  /** Skips the calendar: lets an admin show the workflow live during a demo. */
+  publishNow: {
+    from: ProposalStatus.APPROVED,
+    to: ProposalStatus.PUBLISHED,
+    allowed: [Role.ADMIN],
   },
   archive: {
     from: ProposalStatus.PUBLISHED,

@@ -21,6 +21,15 @@ import type { Actor, ProposalAction } from './domain/workflow.js';
 const PUBLICATION_LOCK_KEY = 4_242_001;
 const REJECTION_REASON_MAX = 280;
 
+/**
+ * Most recent publication first; words published by the same catch-up run
+ * share a timestamp, so the later calendar day wins.
+ */
+const LIVE_ORDER: Prisma.ProposalOrderByWithRelationInput[] = [
+  { publishedAt: { sort: 'desc', nulls: 'last' } },
+  { scheduledFor: { sort: 'desc', nulls: 'last' } },
+];
+
 export type SubmitInput = {
   word: string;
   proposerName?: string | null;
@@ -55,6 +64,7 @@ export class ProposalsService {
           data: {
             word: input.word.trim(),
             normalizedWord,
+            activeWord: normalizedWord,
             proposerName: input.proposerName?.trim() || null,
             proposerId: input.proposerId ?? null,
           },
@@ -69,7 +79,8 @@ export class ProposalsService {
         return proposal;
       });
     } catch (error) {
-      // The unique index settles races between two identical submissions.
+      // The unique index on active_word settles races between two identical
+      // submissions; archived words no longer hold it, so they may come back.
       if (isUniqueViolation(error)) throw new DuplicateWordError();
       throw error;
     }
@@ -158,18 +169,33 @@ export class ProposalsService {
           data: { publishedAt: now },
         });
       }
+      return this.keepLatestLive(tx, now);
+    });
+  }
 
-      const live = await tx.proposal.findMany({
-        where: { status: ProposalStatus.PUBLISHED },
-        orderBy: { scheduledFor: 'desc' },
-      });
-      const [current, ...stale] = live;
-      for (const proposal of stale) {
-        await this.applyTransition(tx, proposal, 'archive', system, {
-          data: { archivedAt: now },
-        });
-      }
-      return current ?? null;
+  /**
+   * Admin shortcut for live demos: publishes an approved word right away,
+   * bypassing the calendar, and archives the word it replaces.
+   */
+  async publishNow(
+    id: string,
+    actor: Actor,
+    expectedVersion: number,
+  ): Promise<Proposal> {
+    const now = this.clock.now();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${PUBLICATION_LOCK_KEY})`;
+      const proposal = await this.findOrThrow(tx, id);
+      const published = await this.applyTransition(
+        tx,
+        proposal,
+        'publishNow',
+        actor,
+        { expectedVersion, data: { publishedAt: now } },
+      );
+      // Explicit, so two publications within the same millisecond stay unambiguous.
+      await this.keepLatestLive(tx, now, published.id);
+      return published;
     });
   }
 
@@ -177,8 +203,36 @@ export class ProposalsService {
   current(): Promise<Proposal | null> {
     return this.prisma.proposal.findFirst({
       where: { status: ProposalStatus.PUBLISHED },
-      orderBy: { scheduledFor: 'desc' },
+      orderBy: LIVE_ORDER,
     });
+  }
+
+  /**
+   * Archives every published word but one, which it returns: `keepId` when
+   * given (a word just published by hand), otherwise the most recent one.
+   */
+  private async keepLatestLive(
+    tx: Tx,
+    now: Date,
+    keepId?: string,
+  ): Promise<Proposal | null> {
+    const live = await tx.proposal.findMany({
+      where: { status: ProposalStatus.PUBLISHED },
+      orderBy: LIVE_ORDER,
+    });
+    const current = keepId ? live.find((p) => p.id === keepId) : live[0];
+    for (const proposal of live) {
+      if (proposal === current) continue;
+      await this.applyTransition(
+        tx,
+        proposal,
+        'archive',
+        { kind: 'system' },
+        // Freeing active_word lets the word be proposed again later.
+        { data: { archivedAt: now, activeWord: null } },
+      );
+    }
+    return current ?? null;
   }
 
   list(status?: ProposalStatus): Promise<Proposal[]> {
@@ -188,10 +242,14 @@ export class ProposalsService {
     });
   }
 
-  async history(id: string): Promise<ProposalEvent[]> {
+  /** Audit trail of a proposal, with the name of whoever acted (null for the system or a visitor). */
+  async history(
+    id: string,
+  ): Promise<(ProposalEvent & { actor: { displayName: string } | null })[]> {
     await this.findOrThrow(this.prisma, id);
     return this.prisma.proposalEvent.findMany({
       where: { proposalId: id },
+      include: { actor: { select: { displayName: true } } },
       orderBy: { createdAt: 'asc' },
     });
   }

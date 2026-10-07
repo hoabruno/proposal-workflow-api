@@ -14,6 +14,8 @@ export default async function setup(): Promise<() => Promise<void>> {
     persistent: false,
   });
   process.env.DATABASE_URL = db.url;
+  process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-validation';
+  process.env.COOKIE_SECURE = 'false';
   execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
     env: { ...process.env, DATABASE_URL: db.url },
     stdio: 'ignore',

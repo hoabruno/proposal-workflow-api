@@ -20,6 +20,8 @@ const STATUS_BY_CODE: Record<string, HttpStatus> = {
   FORBIDDEN_TRANSITION: HttpStatus.FORBIDDEN,
   SELF_REVIEW: HttpStatus.FORBIDDEN,
   PROPOSAL_NOT_FOUND: HttpStatus.NOT_FOUND,
+  INVALID_CREDENTIALS: HttpStatus.UNAUTHORIZED,
+  UNAUTHENTICATED: HttpStatus.UNAUTHORIZED,
 };
 
 export type ApiErrorBody = { code: string; message: string; reason?: string };

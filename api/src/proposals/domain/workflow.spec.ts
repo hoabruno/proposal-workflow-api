@@ -24,6 +24,7 @@ describe('resolveTransition', () => {
     [ProposalStatus.APPROVED, 'schedule', admin, ProposalStatus.SCHEDULED],
     [ProposalStatus.SCHEDULED, 'unschedule', admin, ProposalStatus.APPROVED],
     [ProposalStatus.SCHEDULED, 'publish', system, ProposalStatus.PUBLISHED],
+    [ProposalStatus.APPROVED, 'publishNow', admin, ProposalStatus.PUBLISHED],
     [ProposalStatus.PUBLISHED, 'archive', system, ProposalStatus.ARCHIVED],
   ])('%s --%s--> %s', (from, action, actor, to) => {
     expect(resolveTransition(proposal(from), action, actor)).toBe(to);
@@ -46,6 +47,16 @@ describe('resolveTransition', () => {
       resolveTransition(
         proposal(ProposalStatus.APPROVED),
         'schedule',
+        reviewer,
+      ),
+    ).toThrow(ForbiddenTransitionError);
+  });
+
+  it('keeps immediate publication to admins', () => {
+    expect(() =>
+      resolveTransition(
+        proposal(ProposalStatus.APPROVED),
+        'publishNow',
         reviewer,
       ),
     ).toThrow(ForbiddenTransitionError);
@@ -94,6 +105,7 @@ describe('availableActions', () => {
     ).toEqual([]);
     expect(availableActions(proposal(ProposalStatus.APPROVED), admin)).toEqual([
       'schedule',
+      'publishNow',
     ]);
     expect(
       availableActions(proposal(ProposalStatus.SCHEDULED), system),

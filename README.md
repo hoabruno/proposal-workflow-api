@@ -8,29 +8,35 @@ Visitors propose a word, reviewers approve or reject it, an admin schedules
 approved words on the calendar, and a daily job publishes the **word of the
 day**, which an animated page then spells out.
 
-The code lives in [`api/`](api/).
+The API lives in [`api/`](api/); [`admin/`](admin/) is the Vue 3
+back-office that reviewers and admins use to drive the workflow.
 
 ## Proposal workflow
 
 ```
 SUBMITTED ──approve──► APPROVED ──schedule──► SCHEDULED ──publish──► PUBLISHED ──archive──► ARCHIVED
-    │                      ▲                      │
-    └──reject──► REJECTED  └──────unschedule──────┘
+    │                    │  ▲                     │                      ▲
+    └──reject──► REJECTED │  └──────unschedule─────┘                      │
+                          └──────────────── publishNow ───────────────────┘
 ```
 
 The transitions table in
 [`api/src/proposals/domain/workflow.ts`](api/src/proposals/domain/workflow.ts)
 is the single source of truth. Business rules:
 
-- **Roles.** Reviewers and admins approve or reject; only admins schedule;
-  only the daily job publishes and archives.
+- **Roles.** Reviewers and admins approve or reject; only admins schedule or
+  publish on the spot (`publishNow`, for live demos); only the daily job
+  publishes scheduled words and archives.
 - **Four-eyes rule.** Nobody reviews a word they proposed themselves.
 - **One word per day.** Enforced by a unique `scheduled_for` column; days are
   calendar days in Geneva (`Europe/Zurich`), and planning starts tomorrow.
-- **Each word once.** The normalized word (trimmed, lowercased, NFC) is
-  unique, so concurrent identical submissions are settled by the database.
-  Words are 2 to 12 characters, letters (French accents included), digits,
-  `.` and `-`, and pass a small blocklist.
+- **No duplicates, but words can come back.** A word that is pending,
+  upcoming, live or rejected cannot be proposed again; once archived, it can.
+  An `active_word` column holds the normalized word (trimmed, lowercased,
+  NFC) until archiving clears it, and its unique index settles concurrent
+  identical submissions in the database. Words are 2 to 12 characters,
+  letters (French accents included), digits, `.` and `-`, and pass a small
+  blocklist.
 - **Rejections need a reason**, kept on the proposal and in the audit trail.
 - **Optimistic locking.** Every transition must quote the version the user
   saw; if someone else acted first, the request fails with
@@ -55,11 +61,20 @@ All routes live under `/api`; interactive documentation at `/api/docs`
 | GET    | `/api/words/current`  | Word of the day, or `null` before the first publication.            |
 | GET    | `/api/words/stream`   | Server-Sent Events: `word` on connect and on every change, `ping` every 25 s. |
 | GET    | `/api/health`         | Liveness with a database round trip.                                |
+| POST   | `/api/auth/login`     | Sign in; sets an HttpOnly, SameSite=Strict session cookie (8 h). 5 attempts per minute. |
+| POST   | `/api/auth/logout`    | Sign out.                                                           |
+| GET    | `/api/auth/me`        | Signed-in user.                                                     |
+| GET    | `/api/proposals`      | Signed in. Proposals (`?status=`), each with the `actions` the user may take now. |
+| GET    | `/api/proposals/:id/history` | Signed in. Audit trail with who did what.                    |
+| POST   | `/api/proposals/:id/{approve,reject,schedule,unschedule,publish-now}` | Signed in. Workflow actions; the body quotes the `version` the user saw. |
+
+The back-office never decides what a user may do: it shows the buttons listed
+in `actions`, computed by the same workflow table the server enforces.
 
 Errors always have the shape `{ "code": "...", "message": "..." }` (plus
 `reason` for `INVALID_WORD`): `422` invalid word, `409` duplicate or
-conflicting update, `403` forbidden transition, `429` rate limited, `400`
-malformed payload (`VALIDATION_FAILED`).
+conflicting update, `403` forbidden transition, `401` not signed in, `429`
+rate limited, `400` malformed payload (`VALIDATION_FAILED`).
 
 The daily job runs at 00:00:30 in Geneva and once at boot, so a server that
 was down at midnight catches up as soon as it starts.
@@ -73,8 +88,13 @@ was down at midnight catches up as soon as it starts.
 | `api/src/proposals/proposals.service.ts` | Transactions, optimistic locking, daily publication job  |
 | `api/src/words/`                      | Word of the day, live feed (SSE) and the scheduled job      |
 | `api/src/common/api-exception.filter.ts` | Domain error codes to HTTP statuses                      |
+| `api/src/auth/`                       | scrypt passwords, JWT session cookie, session guard         |
+| `api/src/review/`                     | Back-office endpoints                                       |
+| `api/src/cli/create-user.ts`          | Creates or resets a back-office account                     |
 | `api/test/proposals.e2e-spec.ts`      | Service tests against a real PostgreSQL                     |
 | `api/test/http.e2e-spec.ts`           | HTTP tests: validation, rate limit, SSE, OpenAPI            |
+| `api/test/review.e2e-spec.ts`         | HTTP tests: sign-in, roles, workflow actions, publish now   |
+| `admin/src/`                          | Back-office: sign-in screen and proposals by status         |
 
 ## Running locally
 
@@ -91,6 +111,17 @@ cp .env.example .env
 npm run db:dev                   # terminal 1: Postgres on localhost:54329
 npx prisma migrate deploy        # terminal 2: apply migrations
 npm run start:dev                # http://localhost:3000/api/health
+
+npm run build && npm run user:create -- admin@example.com ADMIN "Your name"
+                                 # password asked at a hidden prompt
+```
+
+The back-office runs on Vite and proxies `/api` to the API:
+
+```bash
+cd admin
+npm install
+npm run dev                      # http://localhost:5173/admin/
 ```
 
 ## Tests
@@ -108,8 +139,6 @@ job at once.
 
 ## Roadmap
 
-- Authentication and reviewer/admin endpoints, OpenAPI documentation.
-- Vue 3 back-office for reviewers and admins.
 - Docker image, CI and deployment.
 
 ## Notes

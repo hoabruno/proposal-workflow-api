@@ -162,13 +162,11 @@ describe('HTTP API', () => {
 
     it('returns the published word of the day', async () => {
       await publish('genève', '2026-10-07');
-      await request(app.getHttpServer())
-        .get('/api/words/current')
-        .expect(200, {
-          word: 'genève',
-          proposerName: 'Léa',
-          day: '2026-10-07',
-        });
+      await request(app.getHttpServer()).get('/api/words/current').expect(200, {
+        word: 'genève',
+        proposerName: 'Léa',
+        day: '2026-10-07',
+      });
     });
   });
 

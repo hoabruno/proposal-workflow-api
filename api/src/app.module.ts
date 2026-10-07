@@ -7,6 +7,8 @@ import { validateEnv } from './config/env.js';
 import { HealthController } from './health/health.controller.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ProposalsModule } from './proposals/proposals.module.js';
+import { ReviewModule } from './review/review.module.js';
+import { AuthModule } from './auth/auth.module.js';
 import { WordsModule } from './words/words.module.js';
 
 @Module({
@@ -20,6 +22,8 @@ import { WordsModule } from './words/words.module.js';
     PrismaModule,
     ProposalsModule,
     WordsModule,
+    AuthModule,
+    ReviewModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

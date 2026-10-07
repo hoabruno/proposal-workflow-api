@@ -1,6 +1,7 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import { ApiExceptionFilter } from './common/api-exception.filter.js';
 
 /** Shared by main.ts and the e2e tests so both run the exact same pipeline. */
@@ -9,6 +10,7 @@ export function configureApp(app: NestExpressApplication): void {
   app.setGlobalPrefix('api');
   // One proxy hop (Traefik): req.ip is the visitor, used for rate limiting.
   app.set('trust proxy', 1);
+  app.use(cookieParser());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -34,6 +36,7 @@ export function configureApp(app: NestExpressApplication): void {
         'Word of the day: proposals, review workflow and live feed.',
       )
       .setVersion('1.0')
+      .addCookieAuth('session')
       .build(),
   );
   SwaggerModule.setup('api/docs', app, document);

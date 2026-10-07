@@ -43,8 +43,12 @@ model Proposal {
   id              String         @id @default(uuid()) @db.Uuid
   /// Word as typed, kept for display.
   word            String
-  /// Lowercased NFC form; unique so a word can only be proposed once, whatever its fate.
-  normalizedWord  String         @unique @map("normalized_word")
+  /// Lowercased NFC form, used for display and lookups.
+  normalizedWord  String         @map("normalized_word")
+  /// Same as normalizedWord while the word is alive, null once archived. Its unique
+  /// index lets an archived word be proposed again, while a rejected, pending or
+  /// upcoming one stays blocked; Postgres never treats nulls as duplicates.
+  activeWord      String?        @unique @map("active_word")
   /// Free-text name for anonymous visitors; proposerId is set when a signed-in user proposes.
   proposerName    String?        @map("proposer_name")
   proposerId      String?        @map("proposer_id") @db.Uuid
@@ -65,6 +69,7 @@ model Proposal {
   events   ProposalEvent[]
 
   @@index([status, createdAt])
+  @@index([normalizedWord])
   @@map("proposals")
 }
 

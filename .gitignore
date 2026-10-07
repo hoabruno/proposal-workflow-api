@@ -8,6 +8,8 @@ coverage/
 .env
 .env.*
 !.env.example
+# Vite local overrides (admin/.env.local)
+*.local
 
 # Local embedded PostgreSQL data
 .pgdata/

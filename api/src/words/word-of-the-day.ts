@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import type { Proposal } from '../generated/prisma/client.js';
-import { formatDay } from '../proposals/domain/calendar.js';
+import { dayInGeneva, formatDay } from '../proposals/domain/calendar.js';
 
 /** Public view of the live word: only what the animated page needs. */
 export class WordOfTheDay {
@@ -27,7 +27,12 @@ export class WordOfTheDay {
     return {
       word: proposal?.normalizedWord ?? null,
       proposerName: proposal?.proposerName ?? null,
-      day: proposal?.scheduledFor ? formatDay(proposal.scheduledFor) : null,
+      // Words published on the spot have no calendar day: use the day they went live.
+      day: proposal?.scheduledFor
+        ? formatDay(proposal.scheduledFor)
+        : proposal?.publishedAt
+          ? dayInGeneva(proposal.publishedAt)
+          : null,
     };
   }
 }

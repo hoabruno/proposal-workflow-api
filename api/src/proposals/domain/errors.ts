@@ -47,7 +47,7 @@ export class DuplicateWordError extends DomainError {
   readonly code = 'DUPLICATE_WORD';
 
   constructor() {
-    super('This word has already been proposed');
+    super('This word is already pending, upcoming, live or rejected');
   }
 }
 
