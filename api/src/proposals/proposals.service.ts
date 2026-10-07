@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
 import type { Proposal, ProposalEvent } from '../generated/prisma/client.js';
-import { ProposalStatus } from '../generated/prisma/enums.js';
+import { ProposalStatus, Role } from '../generated/prisma/enums.js';
 import { Clock } from '../common/clock.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { dayInGeneva, formatDay, parseDay } from './domain/calendar.js';
@@ -9,6 +9,7 @@ import {
   ConcurrentUpdateError,
   DateAlreadyTakenError,
   DuplicateWordError,
+  ForbiddenActionError,
   InvalidScheduleDateError,
   ProposalNotFoundError,
   RejectionReasonRequiredError,
@@ -196,6 +197,23 @@ export class ProposalsService {
       // Explicit, so two publications within the same millisecond stay unambiguous.
       await this.keepLatestLive(tx, now, published.id);
       return published;
+    });
+  }
+
+  /**
+   * Admin-only clean slate before a demo: deletes every proposal and its
+   * audit trail (accounts are kept). Takes the publication lock so it never
+   * interleaves with the daily job. Returns how many proposals were deleted.
+   */
+  async resetAll(actor: Actor): Promise<number> {
+    if (actor.kind !== 'user' || actor.role !== Role.ADMIN) {
+      throw new ForbiddenActionError('reset all words');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${PUBLICATION_LOCK_KEY})`;
+      // Events go with their proposal (ON DELETE CASCADE).
+      const { count } = await tx.proposal.deleteMany();
+      return count;
     });
   }
 

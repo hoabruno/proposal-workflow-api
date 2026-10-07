@@ -36,6 +36,7 @@ const ERRORS: Record<string, string> = {
   INVALID_TRANSITION: "Ce mot a changé d'état entre-temps. La liste a été rafraîchie.",
   SELF_REVIEW: 'Vous ne pouvez pas relire un mot que vous avez proposé.',
   FORBIDDEN_TRANSITION: "Votre rôle ne permet pas cette action.",
+  FORBIDDEN_ACTION: 'Seul un admin peut réinitialiser les mots.',
   DATE_ALREADY_TAKEN: 'Un autre mot est déjà programmé ce jour-là.',
   INVALID_SCHEDULE_DATE: 'Choisissez une date à partir de demain.',
   REJECTION_REASON_REQUIRED: 'Indiquez le motif du refus.',

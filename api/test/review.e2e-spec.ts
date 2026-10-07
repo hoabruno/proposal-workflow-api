@@ -157,6 +157,37 @@ describe('Back-office API', () => {
     });
   });
 
+  describe('reset', () => {
+    it('lets only an admin wipe every word, keeping the accounts', async () => {
+      const id = await submit('fondue');
+      const reviewer = await signIn('reviewer@test');
+      const admin = await signIn('admin@test');
+      await reviewer
+        .post(`/api/proposals/${id}/approve`)
+        .send({ version: 0 })
+        .expect(200);
+      await admin
+        .post(`/api/proposals/${id}/publish-now`)
+        .send({ version: 1 })
+        .expect(200);
+      await submit('raclette');
+
+      const refused = await reviewer.delete('/api/proposals').expect(403);
+      expect(refused.body.code).toBe('FORBIDDEN_ACTION');
+      expect(await prisma.proposal.count()).toBe(2);
+
+      await admin.delete('/api/proposals').expect(200, { deleted: 2 });
+      expect(await prisma.proposal.count()).toBe(0);
+      expect(await prisma.proposalEvent.count()).toBe(0);
+      expect(await prisma.user.count()).toBe(2);
+      await request(server())
+        .get('/api/words/current')
+        .expect(200, { word: null, proposerName: null, day: null });
+      // A word that existed before the reset can be proposed again.
+      await submit('fondue');
+    });
+  });
+
   describe('review workflow over HTTP', () => {
     it('tells each role which actions are available', async () => {
       const id = await submit('carouge');

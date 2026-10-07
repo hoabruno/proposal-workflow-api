@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -68,6 +69,20 @@ export class ReviewController {
   ): Promise<ReviewProposal[]> {
     const proposals = await this.proposals.list(query.status);
     return proposals.map((proposal) => this.view(proposal, actor));
+  }
+
+  @Delete()
+  @ApiOperation({
+    summary: 'Delete every proposal and its history (admin, before a demo)',
+  })
+  @ApiOkResponse({ schema: { properties: { deleted: { type: 'number' } } } })
+  async resetAll(
+    @CurrentActor() actor: UserActor,
+  ): Promise<{ deleted: number }> {
+    const deleted = await this.proposals.resetAll(actor);
+    // Every open tornado falls back to the default word.
+    this.feed.publish(WordOfTheDay.from(null));
+    return { deleted };
   }
 
   @Get(':id/history')

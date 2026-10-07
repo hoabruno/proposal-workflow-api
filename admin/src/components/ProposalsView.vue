@@ -47,6 +47,25 @@ async function run(action: () => Promise<Proposal>, success: string) {
   }
 }
 
+/** Admin only: wipes every word after an explicit confirmation. */
+async function resetAll() {
+  const total = proposals.value.length
+  const question =
+    total === 0
+      ? 'Aucun mot à supprimer. Réinitialiser quand même ?'
+      : `Supprimer définitivement les ${total} mots et tout leur historique ? La tornade reviendra à « atipik ». Cette action est irréversible.`
+  if (!confirm(question)) return
+  notice.value = null
+  try {
+    const { deleted } = await api.resetAll()
+    notice.value = { kind: 'ok', text: deleted > 1 ? `${deleted} mots supprimés. Tout est remis à zéro.` : 'Tout est remis à zéro.' }
+    active.value = 'SUBMITTED'
+    await reload()
+  } catch (e) {
+    handle(e)
+  }
+}
+
 onMounted(reload)
 </script>
 
@@ -57,6 +76,10 @@ onMounted(reload)
       <div class="who">
         <span>{{ props.me.displayName }} · {{ props.me.role === 'ADMIN' ? 'admin' : 'relecteur' }}</span>
         <button class="btn ghost small" type="button" @click="emit('logout')">Se déconnecter</button>
+        <!-- Shown to admins only; the API refuses the reset to anyone else anyway. -->
+        <button v-if="props.me.role === 'ADMIN'" class="btn small" type="button" @click="resetAll">
+          Réinitialiser les mots
+        </button>
       </div>
     </header>
 

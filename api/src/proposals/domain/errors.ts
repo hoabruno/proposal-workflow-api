@@ -27,6 +27,14 @@ export class ForbiddenTransitionError extends DomainError {
   }
 }
 
+export class ForbiddenActionError extends DomainError {
+  readonly code = 'FORBIDDEN_ACTION';
+
+  constructor(action: string) {
+    super(`Only admins may ${action}`);
+  }
+}
+
 export class SelfReviewError extends DomainError {
   readonly code = 'SELF_REVIEW';
 

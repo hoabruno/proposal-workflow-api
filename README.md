@@ -67,6 +67,7 @@ All routes live under `/api`; interactive documentation at `/api/docs`
 | GET    | `/api/proposals`      | Signed in. Proposals (`?status=`), each with the `actions` the user may take now. |
 | GET    | `/api/proposals/:id/history` | Signed in. Audit trail with who did what.                    |
 | POST   | `/api/proposals/:id/{approve,reject,schedule,unschedule,publish-now}` | Signed in. Workflow actions; the body quotes the `version` the user saw. |
+| DELETE | `/api/proposals`      | Admin only. Deletes every proposal and its history before a demo; accounts are kept. |
 
 The back-office never decides what a user may do: it shows the buttons listed
 in `actions`, computed by the same workflow table the server enforces.

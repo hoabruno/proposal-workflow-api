@@ -41,7 +41,7 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
   let response: Response
   try {
     response = await fetch(`/api${path}`, {
@@ -77,4 +77,6 @@ export const api = {
     call<Proposal>('POST', `/proposals/${p.id}/schedule`, { version: p.version, day }),
   unschedule: (p: Proposal) => call<Proposal>('POST', `/proposals/${p.id}/unschedule`, { version: p.version }),
   publishNow: (p: Proposal) => call<Proposal>('POST', `/proposals/${p.id}/publish-now`, { version: p.version }),
+  /** Admin only: deletes every proposal and its history. */
+  resetAll: () => call<{ deleted: number }>('DELETE', '/proposals'),
 }
