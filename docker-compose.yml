@@ -1,0 +1,91 @@
+# Production stack for https://atipik.middlewa.re, behind the shared Traefik
+# of the VPS (external network traefik-public, Let's Encrypt resolver "le",
+# middleware https-redirect).
+#
+#   /api/*   -> api  (Nest.js, port 3000)
+#   /admin/  -> web  (nginx, back-office build)
+#   /        -> web  (nginx, tornado page mounted from ./front)
+#
+# Secrets come from ./.env (see .env.example). Kept at version 2.4 because the
+# VPS runs docker-compose v1, which also needs `docker-compose rm -sf <svc>`
+# before `up -d <svc>` (ContainerConfig bug with Docker 28).
+version: "2.4"
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: atipik-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: atipik
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: atipik
+    volumes:
+      # Postgres 18 images keep their data under /var/lib/postgresql/18/.
+      - atipik-postgres-data:/var/lib/postgresql
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atipik -d atipik"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  api:
+    build: ./api
+    image: atipik-api
+    container_name: atipik-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://atipik:${POSTGRES_PASSWORD}@postgres:5432/atipik
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      TZ: Europe/Zurich
+    networks:
+      - default
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      - traefik.http.routers.atipik-api.rule=Host(`atipik.middlewa.re`) && PathPrefix(`/api`)
+      - traefik.http.routers.atipik-api.entrypoints=https
+      - traefik.http.routers.atipik-api.tls=true
+      - traefik.http.routers.atipik-api.tls.certresolver=le
+      - traefik.http.routers.atipik-api.priority=100
+      - traefik.http.routers.atipik-api.service=atipik-api
+      - traefik.http.services.atipik-api.loadbalancer.server.port=3000
+
+  web:
+    build: ./admin
+    image: atipik-web
+    container_name: atipik-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    volumes:
+      # The tornado page is deployed separately (not part of this repository).
+      - ./front:/usr/share/nginx/front:ro
+    networks:
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      - traefik.http.routers.atipik-http.rule=Host(`atipik.middlewa.re`)
+      - traefik.http.routers.atipik-http.entrypoints=http
+      - traefik.http.routers.atipik-http.middlewares=https-redirect
+      - traefik.http.routers.atipik.rule=Host(`atipik.middlewa.re`)
+      - traefik.http.routers.atipik.entrypoints=https
+      - traefik.http.routers.atipik.tls=true
+      - traefik.http.routers.atipik.tls.certresolver=le
+      - traefik.http.routers.atipik.service=atipik-web
+      - traefik.http.services.atipik-web.loadbalancer.server.port=80
+
+volumes:
+  atipik-postgres-data:
+
+networks:
+  default:
+  traefik-public:
+    external: true

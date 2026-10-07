@@ -11,6 +11,8 @@ day**, which an animated page then spells out.
 The API lives in [`api/`](api/); [`admin/`](admin/) is the Vue 3
 back-office that reviewers and admins use to drive the workflow.
 
+[![CI](https://github.com/hoabruno/proposal-workflow-api/actions/workflows/ci.yml/badge.svg)](https://github.com/hoabruno/proposal-workflow-api/actions/workflows/ci.yml)
+
 ## Proposal workflow
 
 ```
@@ -138,9 +140,34 @@ covers concurrency on purpose: simultaneous identical submissions, two
 reviewers acting on the same proposal, and two instances running the daily
 job at once.
 
-## Roadmap
+## Deployment
 
-- Docker image, CI and deployment.
+`docker-compose.yml` describes the production stack: PostgreSQL 18, the API
+image (`api/Dockerfile`) and an nginx image (`admin/Dockerfile`) serving the
+back-office under `/admin/` and the animated page under `/`. It runs behind
+an existing Traefik (external network `traefik-public`, Let's Encrypt), which
+routes `/api` to the API and everything else to nginx.
+
+```bash
+cp .env.example .env            # POSTGRES_PASSWORD and JWT_SECRET, random values
+docker-compose up -d --build
+docker exec -i atipik-api node dist/cli/create-user.js admin@example.com ADMIN "Your name"
+```
+
+- The API image is multi-stage: it builds with dev dependencies, then ships
+  only production dependencies and runs as the unprivileged `node` user.
+- Pending migrations run when the API container starts, before it listens;
+  this suits the single-instance deployment.
+- Health: the container healthcheck calls `/api/health`, which also checks the
+  database connection.
+- Secure session cookies are on by default; only local HTTP development sets
+  `COOKIE_SECURE=false`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and on pull requests:
+lint, type check, unit tests, e2e tests on a throwaway PostgreSQL, the API and
+back-office builds, then both Docker images.
 
 ## Notes
 
