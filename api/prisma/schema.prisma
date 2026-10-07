@@ -1,0 +1,87 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  REVIEWER
+  ADMIN
+}
+
+/// Lifecycle of a word proposal. Allowed transitions live in src/proposals/domain/workflow.ts.
+enum ProposalStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  displayName  String   @map("display_name")
+  role         Role
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  proposals Proposal[]      @relation("proposer")
+  reviewed  Proposal[]      @relation("reviewer")
+  events    ProposalEvent[]
+
+  @@map("users")
+}
+
+model Proposal {
+  id              String         @id @default(uuid()) @db.Uuid
+  /// Word as typed, kept for display.
+  word            String
+  /// Lowercased NFC form; unique so a word can only be proposed once, whatever its fate.
+  normalizedWord  String         @unique @map("normalized_word")
+  /// Free-text name for anonymous visitors; proposerId is set when a signed-in user proposes.
+  proposerName    String?        @map("proposer_name")
+  proposerId      String?        @map("proposer_id") @db.Uuid
+  status          ProposalStatus @default(SUBMITTED)
+  rejectionReason String?        @map("rejection_reason")
+  reviewerId      String?        @map("reviewer_id") @db.Uuid
+  /// Calendar day (Europe/Zurich) the word is shown; one word per day at most.
+  scheduledFor    DateTime?      @unique @map("scheduled_for") @db.Date
+  publishedAt     DateTime?      @map("published_at") @db.Timestamptz(3)
+  archivedAt      DateTime?      @map("archived_at") @db.Timestamptz(3)
+  /// Optimistic locking: every transition increments it.
+  version         Int            @default(0)
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  proposer User?           @relation("proposer", fields: [proposerId], references: [id], onDelete: SetNull)
+  reviewer User?           @relation("reviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  events   ProposalEvent[]
+
+  @@index([status, createdAt])
+  @@map("proposals")
+}
+
+/// Append-only audit trail: one row per status change.
+model ProposalEvent {
+  id         String          @id @default(uuid()) @db.Uuid
+  proposalId String          @map("proposal_id") @db.Uuid
+  /// Null for system actions (daily publication job) and anonymous submissions.
+  actorId    String?         @map("actor_id") @db.Uuid
+  fromStatus ProposalStatus? @map("from_status")
+  toStatus   ProposalStatus  @map("to_status")
+  comment    String?
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  actor    User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([proposalId, createdAt])
+  @@map("proposal_events")
+}

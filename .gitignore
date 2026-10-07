@@ -1,0 +1,21 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local embedded PostgreSQL data
+.pgdata/
+
+# Generated Prisma client
+api/src/generated/
+
+# Editor and OS files
+.DS_Store
+.idea/
+*.log
