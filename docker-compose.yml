@@ -23,6 +23,8 @@ services:
     volumes:
       # Postgres 18 images keep their data under /var/lib/postgresql/18/.
       - atipik-postgres-data:/var/lib/postgresql
+    security_opt:
+      - no-new-privileges:true
     networks:
       - default
     healthcheck:
@@ -42,7 +44,14 @@ services:
     environment:
       DATABASE_URL: postgresql://atipik:${POSTGRES_PASSWORD}@postgres:5432/atipik
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # State-changing requests must come from the site itself (CSRF defence).
+      ALLOWED_ORIGINS: https://atipik.middlewa.re
       TZ: Europe/Zurich
+    # Runs as an unprivileged user and needs no Linux capability at all.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - default
       - traefik-public
@@ -67,6 +76,8 @@ services:
     volumes:
       # The tornado page is deployed separately (not part of this repository).
       - ./front:/usr/share/nginx/front:ro
+    security_opt:
+      - no-new-privileges:true
     networks:
       - traefik-public
     labels:

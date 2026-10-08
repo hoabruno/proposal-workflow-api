@@ -12,6 +12,25 @@ import { WordOfTheDay } from './word-of-the-day.js';
 export class WordFeedService {
   private readonly changes = new Subject<WordOfTheDay>();
   private lastWord: string | null | undefined;
+  private openStreams = 0;
+
+  /**
+   * Reserves a slot for one more open stream; false once the cap is reached,
+   * so a flood of connections cannot exhaust memory or file descriptors.
+   */
+  acquireStream(max: number): boolean {
+    if (this.openStreams >= max) return false;
+    this.openStreams++;
+    return true;
+  }
+
+  get streamCount(): number {
+    return this.openStreams;
+  }
+
+  releaseStream(): void {
+    this.openStreams = Math.max(0, this.openStreams - 1);
+  }
 
   get updates(): Observable<WordOfTheDay> {
     return this.changes.asObservable();

@@ -8,8 +8,13 @@ export function validateEnv(
   if (missing.length > 0) {
     throw new Error(`Missing environment variables: ${missing.join(', ')}`);
   }
-  if (String(env.JWT_SECRET).length < 32) {
+  const secret = String(env.JWT_SECRET);
+  if (secret.length < 32) {
     throw new Error('JWT_SECRET must be at least 32 characters');
+  }
+  // The value from .env.example is long enough, so refuse it explicitly.
+  if (secret.startsWith('change-me')) {
+    throw new Error('JWT_SECRET still has its example value');
   }
   return env;
 }

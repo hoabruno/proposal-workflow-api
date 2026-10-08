@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   ParseUUIDPipe,
   Post,
@@ -51,6 +52,8 @@ type UserActor = Actor & { kind: 'user' };
 @UseGuards(SessionGuard)
 @Controller('proposals')
 export class ReviewController {
+  private readonly logger = new Logger(ReviewController.name);
+
   constructor(
     private readonly proposals: ProposalsService,
     private readonly feed: WordFeedService,
@@ -80,6 +83,10 @@ export class ReviewController {
     @CurrentActor() actor: UserActor,
   ): Promise<{ deleted: number }> {
     const deleted = await this.proposals.resetAll(actor);
+    // Irreversible, so leave a trace of who did it.
+    this.logger.warn(
+      `All words reset by user ${actor.id} (${deleted} deleted)`,
+    );
     // Every open tornado falls back to the default word.
     this.feed.publish(WordOfTheDay.from(null));
     return { deleted };

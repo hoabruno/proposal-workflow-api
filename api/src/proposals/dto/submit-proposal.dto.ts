@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -23,6 +23,10 @@ export class SubmitProposalDto {
   @Transform(trim)
   @IsString()
   @MaxLength(40)
+  // Shown publicly: no control or format characters (line breaks, bidi overrides...).
+  @Matches(/^[^\p{Cc}\p{Cf}]*$/u, {
+    message: 'proposerName contains invisible characters',
+  })
   proposerName?: string;
 }
 

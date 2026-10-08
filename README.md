@@ -163,6 +163,38 @@ docker exec -i atipik-api node dist/cli/create-user.js admin@example.com ADMIN "
 - Secure session cookies are on by default; only local HTTP development sets
   `COOKIE_SECURE=false`.
 
+## Security
+
+- **Passwords**: Node's built-in scrypt (N = 2^17, r = 8, p = 1), compared in
+  constant time; an unknown email costs the same time as a wrong password.
+- **Sessions**: JWT (HS256, 8 h) in an `HttpOnly`, `Secure`, `SameSite=Strict`
+  cookie scoped to `/api`. The user is reloaded on every request, so a deleted
+  account loses access at once. Tokens are not revocable before expiry: logging
+  out clears the cookie only.
+- **CSRF**: on top of `SameSite=Strict`, which does not cover sibling
+  subdomains, state-changing requests must carry an allowed `Origin`
+  (`ALLOWED_ORIGINS`).
+- **Authorization** lives in the workflow table on the server; the back-office
+  only renders the `actions` the API returns.
+- **Rate limits** per client IP (Traefik sets `X-Forwarded-For`, and the API
+  trusts exactly one proxy hop): 3 submissions per hour, 5 sign-in attempts per
+  minute, 120 requests per minute overall, at most 500 open live streams. The
+  counters live in memory, which fits a single instance.
+- **Input**: DTO validation with whitelisting (unknown fields are refused), a
+  domain word policy, no control characters in public names, Prisma queries
+  only (raw SQL is limited to a parameterized advisory lock).
+- **Errors** always answer `{ code, message }`; unexpected ones are logged and
+  return a generic body.
+- **Headers**: helmet on the API (HSTS, nosniff, no `X-Powered-By`); nginx adds
+  HSTS and a strict Content-Security-Policy without `unsafe-inline`.
+- **Containers**: the API runs as the unprivileged `node` user with every Linux
+  capability dropped; all services set `no-new-privileges`; PostgreSQL is not
+  exposed outside the Docker network; secrets come from a mode-600 `.env`.
+- **Boot checks**: missing variables, a short `JWT_SECRET` or the example value
+  stop the API at startup.
+- The OpenAPI documentation is public on purpose: this is a demo whose code is
+  public too.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and on pull requests:

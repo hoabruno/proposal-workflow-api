@@ -1,8 +1,11 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { ApiExceptionFilter } from './common/api-exception.filter.js';
+import { originCheck, parseOrigins } from './common/origin-check.js';
 
 /** Shared by main.ts and the e2e tests so both run the exact same pipeline. */
 export function configureApp(app: NestExpressApplication): void {
@@ -10,6 +13,12 @@ export function configureApp(app: NestExpressApplication): void {
   app.setGlobalPrefix('api');
   // One proxy hop (Traefik): req.ip is the visitor, used for rate limiting.
   app.set('trust proxy', 1);
+  // Security headers (HSTS, nosniff, frame-ancestors...) and no X-Powered-By.
+  // The API only serves JSON and the Swagger UI, so helmet's defaults fit.
+  app.use(helmet());
+  app.use(
+    originCheck(parseOrigins(app.get(ConfigService).get('ALLOWED_ORIGINS'))),
+  );
   app.use(cookieParser());
   app.useGlobalPipes(
     new ValidationPipe({

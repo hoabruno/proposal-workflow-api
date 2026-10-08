@@ -9,6 +9,7 @@ import { PrismaService } from '../src/prisma/prisma.service.js';
 import type { Actor } from '../src/proposals/domain/workflow.js';
 import { ProposalsService } from '../src/proposals/proposals.service.js';
 import { PublicationJob } from '../src/words/publication.job.js';
+import { WordFeedService } from '../src/words/word-feed.service.js';
 
 class FixedClock extends Clock {
   current = new Date('2026-10-06T08:00:00Z');
@@ -225,6 +226,78 @@ describe('HTTP API', () => {
         // Always close the stream, otherwise app.close() waits for it forever.
         controller.abort();
       }
+    });
+  });
+
+  describe('hardening', () => {
+    it('sends security headers and hides the framework', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/health')
+        .expect(200);
+      expect(response.headers['x-powered-by']).toBeUndefined();
+      expect(response.headers['strict-transport-security']).toContain(
+        'max-age=',
+      );
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+    });
+
+    it('refuses state changes coming from another origin', async () => {
+      const refused = await request(app.getHttpServer())
+        .post('/api/proposals')
+        .set('X-Forwarded-For', nextIp())
+        .set('Origin', 'https://plex.middlewa.re')
+        .send({ word: 'csrf' })
+        .expect(403);
+      expect(refused.body.code).toBe('FORBIDDEN_ORIGIN');
+      await request(app.getHttpServer())
+        .post('/api/proposals')
+        .set('X-Forwarded-For', nextIp())
+        .set('Origin', 'https://atipik.test')
+        .send({ word: 'csrf' })
+        .expect(201);
+      // Reads are not affected.
+      await request(app.getHttpServer())
+        .get('/api/words/current')
+        .set('Origin', 'https://plex.middlewa.re')
+        .expect(200);
+    });
+
+    it('answers framework errors with the usual { code, message } shape', async () => {
+      const unknown = await request(app.getHttpServer())
+        .get('/api/nope')
+        .expect(404);
+      expect(unknown.body).toEqual({
+        code: 'NOT_FOUND',
+        message: expect.any(String),
+      });
+      const malformed = await request(app.getHttpServer())
+        .post('/api/proposals')
+        .set('X-Forwarded-For', nextIp())
+        .set('Content-Type', 'application/json')
+        .send('{"word":')
+        .expect(400);
+      expect(malformed.body.code).toBe('BAD_REQUEST');
+    });
+
+    it('refuses invisible characters in the public name', async () => {
+      const response = await post({
+        word: 'bidi',
+        proposerName: 'L\u202eéa',
+      }).expect(400);
+      expect(response.body.code).toBe('VALIDATION_FAILED');
+    });
+
+    it('frees the live feed slot when a client disconnects', async () => {
+      const feed = app.get(WordFeedService);
+      const before = feed.streamCount;
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/words/stream`, {
+        signal: controller.signal,
+      });
+      await response.body!.getReader().read();
+      expect(feed.streamCount).toBe(before + 1);
+      controller.abort();
+      await vi.waitFor(() => expect(feed.streamCount).toBe(before));
     });
   });
 

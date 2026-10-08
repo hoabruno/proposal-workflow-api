@@ -2,7 +2,9 @@ import {
   ArgumentsHost,
   Catch,
   ExceptionFilter,
+  HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
 import type { Response } from 'express';
@@ -29,33 +31,76 @@ export type ApiErrorBody = { code: string; message: string; reason?: string };
 
 /**
  * Every error the API returns has the same shape, `{ code, message }`, so
- * clients switch on a stable code rather than parsing messages.
+ * clients switch on a stable code rather than parsing messages. Unexpected
+ * errors are logged and answered with a generic body that leaks nothing.
  */
-@Catch(DomainError, ThrottlerException)
+@Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
-  catch(
-    exception: DomainError | ThrottlerException,
-    host: ArgumentsHost,
-  ): void {
-    const response = host.switchToHttp().getResponse<Response>();
+  private readonly logger = new Logger('ApiError');
 
-    if (exception instanceof ThrottlerException) {
-      response.status(HttpStatus.TOO_MANY_REQUESTS).json({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Too many requests, try again later',
-      } satisfies ApiErrorBody);
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse<Response>();
+    const [status, body] = this.describe(exception);
+    // A stream (SSE) may already have sent its headers: just close it.
+    if (response.headersSent) {
+      response.end();
       return;
     }
+    response.status(status).json(body);
+  }
 
-    const body: ApiErrorBody = {
-      code: exception.code,
-      message: exception.message,
-    };
-    if ('reason' in exception && typeof exception.reason === 'string') {
-      body.reason = exception.reason;
+  private describe(exception: unknown): [HttpStatus, ApiErrorBody] {
+    if (exception instanceof DomainError) {
+      const body: ApiErrorBody = {
+        code: exception.code,
+        message: exception.message,
+      };
+      if ('reason' in exception && typeof exception.reason === 'string') {
+        body.reason = exception.reason;
+      }
+      return [STATUS_BY_CODE[exception.code] ?? HttpStatus.BAD_REQUEST, body];
     }
-    response
-      .status(STATUS_BY_CODE[exception.code] ?? HttpStatus.BAD_REQUEST)
-      .json(body);
+
+    if (exception instanceof ThrottlerException) {
+      return [
+        HttpStatus.TOO_MANY_REQUESTS,
+        {
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Too many requests, try again later',
+        },
+      ];
+    }
+
+    // Framework errors (invalid UUID, unknown route, malformed JSON...), and
+    // errors raised with an explicit { code, message } such as VALIDATION_FAILED.
+    if (exception instanceof HttpException) {
+      const status = exception.getStatus();
+      const payload = exception.getResponse();
+      if (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'code' in payload
+      ) {
+        const { code, message } = payload as {
+          code: unknown;
+          message: unknown;
+        };
+        return [status, { code: String(code), message: String(message) }];
+      }
+      const message =
+        typeof payload === 'object' && payload !== null && 'message' in payload
+          ? [(payload as { message: unknown }).message].flat().join('; ')
+          : exception.message;
+      return [status, { code: HttpStatus[status] ?? 'HTTP_ERROR', message }];
+    }
+
+    this.logger.error(
+      'Unexpected error',
+      exception instanceof Error ? exception.stack : String(exception),
+    );
+    return [
+      HttpStatus.INTERNAL_SERVER_ERROR,
+      { code: 'INTERNAL_ERROR', message: 'Something went wrong' },
+    ];
   }
 }
